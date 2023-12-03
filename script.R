@@ -64,7 +64,8 @@ rw %>%
 # Hay 24 valores nulos en la variable ingresos. En general corresponden a 
 # personas solteras y con educación en segundo ciclo o posgrados. Tambien
 # viudos.
-# Se completarán los valores con criterios de cercanía entre parecidos.
+# Dado que el ingreso no se utilizará (en general, no se tiene información sobre
+# el ingreso de los clientes, entonces los valores nulos no son importantes)
 
 #### Análisis descriptivo ####
 
@@ -119,7 +120,8 @@ rw %>%
          fill =  guide_legend(title="")) +
   ylab("Densidad")
 
-# Diferencias en educación, estado civil, y cantidad de hijos con analisis de correspondencias multiples
+# Diferencias en educación, estado civil, y cantidad de hijos con analisis
+# de correspondencias multiples
 
 # Creo una variable con cantidad de hijos, es más categórica que otra cosa
 rw$qchild <- apply(rw[,c("Kidhome","Teenhome")], MARGIN = 1, FUN = sum)
@@ -129,13 +131,15 @@ rw$qchild <- as.factor(rw$qchild)
 order_education <- c("Basic", "2n Cycle", "Graduation", "PhD", "Master")
 orden_marital_status <- c("Married", "Together", "Single", "Divorced", "Widow")
 
+rw$Marital_Status <- if_else(!(rw$Marital_Status %in% orden_marital_status), "Single", rw$Marital_Status)
+
 rw %>%
-  select(ID, Education, Marital_Status, qchild) %>%
+  select(ID, Education, `Marital Status` = Marital_Status, `Kids` = qchild) %>%
   mutate(Education = factor(Education, levels = order_education),
-         Marital_Status = factor(Marital_Status, levels = orden_marital_status)) %>%
+         `Marital Status` = factor(`Marital Status`, levels = orden_marital_status)) %>%
   pivot_longer(-ID, names_to = "nombre", values_to = "valor") %>%
   ggplot(aes(x = valor)) +
-  geom_bar(fill = "tomato1") +
+  geom_bar(fill = "darkcyan") +
   facet_wrap(~nombre, scales = "free") +
   labs(title = "Distribución de Categorías",
        x = "Valor",
@@ -236,12 +240,6 @@ rw %>%
 ##### ¿Hay productos que se consumen al mismo tiempo? ¿Cuál es su relación con la edad? #####
 
 rw %>% 
-  select(edad, MntWines, MntFishProducts, MntFruits, MntGoldProds, MntMeatProducts, 
-         MntSweetProducts) %>% 
-  GGally::ggpairs() +
-  scale_fill_manual(values = mcolors)
-
-rw %>% 
   select(MntWines, MntFishProducts, MntFruits, MntGoldProds, MntMeatProducts, 
          MntSweetProducts, edad) %>% 
   cor(.) %>% 
@@ -270,28 +268,108 @@ rw %>%
   guides(fill =  guide_legend(title="")) +
   theme(axis.text.x = element_blank())
 
+##### ¿Y en relación a sus medios de consumo? ###
+rw %>% 
+  select(atleastone, NumDealsPurchases,  NumCatalogPurchases, NumStorePurchases, NumWebVisitsMonth, NumWebPurchases) %>% 
+  pivot_longer(-atleastone, values_to = "val", names_to = "name") %>% 
+  ggplot(aes(y = val, fill = atleastone)) +
+  geom_boxplot() +
+  ylab("Consumo") +
+  guides(color = guide_legend(title="atleastone")) +
+  scale_fill_manual(values = c("Compró" = "dodgerblue1", "No Compró" = "dodgerblue4")) +
+  xlab("") +
+  facet_wrap(~ name, scales = "free") +
+  guides(fill =  guide_legend(title="")) +
+  theme(axis.text.x = element_blank())
+
+  
+rw %>% 
+  select(NumDealsPurchases,  NumCatalogPurchases, NumStorePurchases, NumWebVisitsMonth, NumWebPurchases) %>% 
+  cor(.) %>% 
+  corrplot(type = 'lower', order = 'hclust', tl.col = 'black',
+           cl.ratio = 0.2, tl.srt = 45, col = COL2('PuOr', 10))
+
 ## Clustering ####
 library(tidymodels)
+library(tidyclust)
 
 # Tipos de estandarización
 minmax = function(x) (x - min(x)) / (max(x) - min(x))
 rob_scale = function(x) (x - median(x)) / IQR(x)
 
-# Paso 1: Preprocesamiento de datos
-clustering_data_scaled <- rw %>% 
-  select(-c(Year_Birth, AcceptedCmp1, AcceptedCmp2, AcceptedCmp3, AcceptedCmp4, AcceptedCmp5, Complain, Response)) %>% 
-  filter(!is.na(Income)) %>% 
-  mutate(hijos = as.numeric(ifelse(hijos == "Hijos", 1, 0)),
-         atleastone = as.numeric(ifelse(atleastone == "Compró", 1, 0))) %>% 
-  select(-ID) %>% 
+# Paso 1: Preprocesamiento de datos.
+# Sólo se conservan las variables: 
+# MntWines, MntFruits, MntMeatProducts, MntFishProducts, MntSweetProducts, MntGoldProds
+# Edad, qchild
+
+# Tambien se crean las siguientes variables:
+# Engagement = num_web_purchased / num_web_visits_month
+
+# Dado que para comprar por la web se necesita entrar, se transforman los 0 a 1s
+
+rw$NumWebVisitsMonth <- ifelse(rw$NumWebPurchases > 0 & rw$NumWebVisitsMonth == 0, 1, rw$NumWebVisitsMonth)
+
+clustering_data_scaled <- rw %>%
+  mutate(engagement = ifelse(NumWebPurchases>0, NumWebPurchases/NumWebVisitsMonth, 0)) %>% 
+  select(engagement, qchild, edad, MntWines, MntFruits, MntMeatProducts, MntFishProducts, MntSweetProducts, MntGoldProds,
+         NumDealsPurchases,  NumCatalogPurchases, NumStorePurchases) %>%  
   select_if(is.numeric) %>% 
-  mutate_all(rob_scale)
+  mutate_all(rob_scale) 
 
 # Prueba de hopkins para agrupamiento
-hopkins = factoextra::get_clust_tendency(rw_procesado, n=100, seed=321)
+hopkins = factoextra::get_clust_tendency(clustering_data_scaled, n=100, seed=321)
 cat("Hopkins =", hopkins$hopkins_stat)
 
-library(dplyr)
-library(tidymodels)
-library(tidyclust)
+# Cantidad de grupos bajo distintos criterios de agrupamiento
+
+# No jerarquico 2
+factoextra::fviz_nbclust( 
+  clustering_data_scaled,
+  FUNcluster=function(x, k) amap::Kmeans(x, k, method="manhattan"),
+  method="silhouette", k.max=20, diss=dist(clustering_data_scaled, method="manhattan"))
+
+gap_stat <- factoextra::fviz_nbclust(x = clustering_data_scaled, FUNcluster = kmeans, method = "gap_stat", nboot = 100,
+             k.max = 15, verbose = FALSE, nstart = 50) +
+  labs(title = "Número óptimo de clusters")
+
+# Jerarquico 3
+factoextra::fviz_nbclust(clustering_data_scaled, FUNcluster=factoextra::hcut, method="wss", k.max=20
+             ,diss=dist(clustering_data_scaled, method="manhattan"), hc_method="average") 
+
+## Análisis de dendograma
+library(viridis)
+colores <- viridis(256)
+heatmap(x = as.matrix(clustering_data_scaled), scale = "none", col = colores,
+        distfun = function(x){dist(x, method = "manhattan")},
+        hclustfun = function(x){hclust(x, method = "average")})
+
+
+# Comparación de clusters
+library(clValid)
+comparacion <- clValid(
+  obj        = as.matrix(clustering_data_scaled),
+  nClust     = 2:5,
+  clMethods  = c("hierarchical", "kmeans", "pam"),
+  validation = c("stability", "internal")
+)
+summary(comparacion)
+
+
+
+
+# Creamos los clusters y luego los comparamos
+library(factoextra)
+library(cluster)
+
+# Se opta por la metrica de distancia
+pam_clusters <- pam(x = clustering_data_scaled, k = 2, metric = "euclidean")
+pam_clusters
+#
+# clus_manhat <- fviz_cluster(object = pam_clusters, data = clustering_data_scaled, ellipse.type = "t") +
+#   theme_bw() +
+#   labs(title = "Resultados clustering PAM")
+
+clus_euclid <- fviz_cluster(object = pam_clusters, data = clustering_data_scaled, ellipse.type = "t") +
+  theme_bw() +
+  labs(title = "Resultados clustering PAM")
 

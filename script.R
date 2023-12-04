@@ -36,6 +36,7 @@ theme_set(
     )
 )
 
+
 # Cargo los datos
 rw <- readxl::read_excel("marketing_campaign.xlsx")
 str(rw)
@@ -314,7 +315,7 @@ clustering_data_scaled <- rw %>%
   select(engagement, qchild, edad, MntWines, MntFruits, MntMeatProducts, MntFishProducts, MntSweetProducts, MntGoldProds,
          NumDealsPurchases,  NumCatalogPurchases, NumStorePurchases) %>%  
   select_if(is.numeric) %>% 
-  mutate_all(rob_scale) 
+  mutate_all(scale) 
 
 # Prueba de hopkins para agrupamiento
 hopkins = factoextra::get_clust_tendency(clustering_data_scaled, n=100, seed=321)
@@ -344,15 +345,30 @@ heatmap(x = as.matrix(clustering_data_scaled), scale = "none", col = colores,
         hclustfun = function(x){hclust(x, method = "average")})
 
 
-# Comparación de clusters
+# Comparación de clusters para estandarizacion robusta
 library(clValid)
-comparacion <- clValid(
+comparacion_robusta <- clValid(
   obj        = as.matrix(clustering_data_scaled),
-  nClust     = 2:5,
+  nClust     = 2:4,
   clMethods  = c("hierarchical", "kmeans", "pam"),
   validation = c("stability", "internal")
 )
-summary(comparacion)
+
+summary(comparacion_robusta)
+
+comparacion_normalizada <- clValid(
+  obj        = as.matrix(clustering_data_scaled),
+  nClust     = 2:4,
+  clMethods  = c("hierarchical", "kmeans", "pam"),
+  validation = c("stability", "internal")
+)
+
+summary(comparacion_normalizada)
+
+
+
+
+
 
 
 

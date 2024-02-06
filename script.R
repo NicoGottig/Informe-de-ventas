@@ -366,13 +366,6 @@ comparacion_normalizada <- clValid(
 summary(comparacion_normalizada)
 
 
-
-
-
-
-
-
-
 # Creamos los clusters y luego los comparamos
 library(factoextra)
 library(cluster)
